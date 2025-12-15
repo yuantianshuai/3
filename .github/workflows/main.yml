@@ -19,16 +19,14 @@ jobs:
           python-version: '3.9'
 
       - name: 安装依赖 (新增翻译库)
-        # 这里我们多装了一个 deep-translator 用来做免费翻译
         run: pip install requests feedparser deep-translator
 
       - name: 运行监控脚本
         env:
-          # 【重要】请保留你的 Token
+          # 你的 Token (已保留)
           PUSH_TOKEN: "d5f7de478314479bba5bce5b4fb1388b"
-          # 【目标】如果你想换人，改下面链接最后的 ID 即可
-          # 比如想监控马斯克，就改成: .../user/elonmusk
-          RSS_URL: "https://rsshub.app/twitter/user/Web3WithBinance"
+          # 【这里已修正】改为你截图里的正确 ID: BinanceWallet
+          RSS_URL: "https://rsshub.app/twitter/user/BinanceWallet"
         run: |
           python -c "
           import feedparser
@@ -52,15 +50,15 @@ jobs:
                   current_time = time.time()
                   time_diff = current_time - published_time
                   
-                  # 为了方便你测试，你可以把下面这个 < 2400 改大一点，或者先删掉 if 限制
+                  # 如果你想测试旧消息，可以把下面这个 2400 改得很大，比如 999999
                   if time_diff < 2400:
                       print('发现新推文，正在翻译...')
                       
                       # 2. 清理 HTML 标签以便翻译
                       raw_text = newest.description
-                      clean_text = re.sub(r'<[^>]+>', '', raw_text) # 去掉 <br> <img> 等
+                      clean_text = re.sub(r'<[^>]+>', '', raw_text)
                       
-                      # 3. 自动翻译 (如果翻译失败，自动降级只发原文)
+                      # 3. 自动翻译
                       try:
                           translator = GoogleTranslator(source='auto', target='zh-CN')
                           translated_text = translator.translate(clean_text)
@@ -72,7 +70,7 @@ jobs:
                       content = f'''
                       <b>【中文翻译】</b><br>{translated_text}<br>
                       <br><b>【英文原文】</b><br>{raw_text}<br>
-                      <br>👉 <a href="{newest.link}">点击查看原文</a>
+                      <br>👉 <a href=\"{newest.link}\">点击查看原文</a>
                       '''
                       
                       # 5. 发送
