@@ -28,7 +28,7 @@ jobs:
           PUSH_TOKEN: "d5f7de478314479bba5bce5b4fb1388b"
           # 【目标】如果你想换人，改下面链接最后的 ID 即可
           # 比如想监控马斯克，就改成: .../user/elonmusk
-          RSS_URL: "https://rsshub.app/twitter/user/BinanceWallet"
+          RSS_URL: "https://rsshub.app/twitter/user/Web3WithBinance"
         run: |
           python -c "
           import feedparser
