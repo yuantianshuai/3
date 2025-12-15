@@ -26,7 +26,7 @@ jobs:
           # 你的 Token (已保留)
           PUSH_TOKEN: "d5f7de478314479bba5bce5b4fb1388b"
           # 【这里已修正】改为你截图里的正确 ID: BinanceWallet
-          RSS_URL: "https://rsshub.app/twitter/user/BinanceWallet"
+          RSS_URL: "https://rsshub.app/twitter/user/zkPass"
         run: |
           python -c "
           import feedparser
