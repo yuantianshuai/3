@@ -1,4 +1,4 @@
-name: 币安监控(最终防封版)
+name: 币安监控(终极猎手版)
 
 on:
   schedule:
@@ -18,116 +18,74 @@ jobs:
           python-version: '3.9'
 
       - name: 安装依赖
-        run: pip install requests feedparser deep-translator
+        # 注意：这次我们安装的是 ntscraper，它是专门爬推特的
+        run: pip install requests deep-translator ntscraper
 
       - name: 运行监控脚本
         env:
           PUSH_TOKEN: "d5f7de478314479bba5bce5b4fb1388b"
         run: |
           python -c "
-          import feedparser
+          from ntscraper import Nitter
           import requests
           import os
           import time
-          import re
-          import random
           from deep_translator import GoogleTranslator
 
           token = os.environ['PUSH_TOKEN']
+          target_username = 'BinanceWallet' # 你的目标账号
+
+          print('================ 启动 Nitter 猎手 ================')
+          print(f'正在搜寻 {target_username} 的最新推文...')
           
-          # === 备用线路列表 (脚本会自动一个个试) ===
-          # 这些是 RSSHub 的镜像站和 Nitter 节点，混合使用提高成功率
-          urls = [
-              'https://rsshub.rssforever.com/twitter/user/BinanceWallet',
-              'https://rsshub.ktachibana.party/twitter/user/BinanceWallet',
-              'https://nitter.privacydev.net/BinanceWallet/rss',
-              'https://nitter.poast.org/BinanceWallet/rss',
-              'https://rsshub.app/twitter/user/BinanceWallet' 
-          ]
-
-          # === 伪装成浏览器的头信息 (关键！) ===
-          # 之前失败是因为没有这个，对方知道你是机器人
-          headers = {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-              'Accept-Language': 'en-US,en;q=0.5'
-          }
-
-          print('================ 开始轮询 ================')
-          
-          success = False
-          feed = None
-          used_url = ''
-
-          # 循环尝试每一个链接
-          for url in urls:
-              print(f'正在尝试连接线路: {url} ...')
-              try:
-                  # 使用 requests 带上伪装头去下载数据
-                  response = requests.get(url, headers=headers, timeout=15)
-                  
-                  if response.status_code == 200:
-                      # 把下载到的内容喂给 feedparser
-                      feed = feedparser.parse(response.text)
-                      if feed.entries:
-                          print(f'✅ 成功！在该线路上抓到了 {len(feed.entries)} 条推文')
-                          success = True
-                          used_url = url
-                          break # 只要有一个成功，就跳出循环
-                      else:
-                          print(f'❌ 连接成功但内容为空 (可能是反爬虫生效)')
-                  else:
-                      print(f'❌ 网站报错: 状态码 {response.status_code}')
-              except Exception as e:
-                  print(f'❌ 线路连接超时或出错: {e}')
+          try:
+              # 初始化爬虫，让它自己去寻找能用的服务器
+              scraper = Nitter(log_level=1)
               
-              print('休息 3 秒，尝试下一条...')
-              time.sleep(3)
-
-          # === 如果成功抓到数据，开始处理 ===
-          if success and feed:
-              newest = feed.entries[0]
+              # 抓取最新的 3 条推文
+              tweets_data = scraper.get_tweets(target_username, mode='user', number=3)
               
-              # 打印第一条的时间，方便调试
-              if hasattr(newest, 'published_parsed'):
-                  pub_time = time.mktime(newest.published_parsed)
-                  time_diff = time.time() - pub_time
-                  print(f'⏱️ 最新推文发布于: {time_diff/60:.1f} 分钟前')
+              if tweets_data and 'tweets' in tweets_data and len(tweets_data['tweets']) > 0:
+                  # 拿到最新的一条
+                  newest = tweets_data['tweets'][0]
                   
-                  # 设定时间限制：例如只推 60 分钟内的 (调试时可以改大)
-                  # 如果你想测试，把下面的 3600 改成 9999999
-                  limit_seconds = 3600 
+                  # 打印出来看看抓到了什么
+                  print(f'✅ 抓取成功！ID: {newest.get(\"link\", \"未知\")}')
+                  print(f'📄 内容片段: {newest.get(\"text\", \"\")[:30]}...')
                   
-                  if time_diff < limit_seconds:
-                      print('🚀 发现新消息，开始翻译推送...')
-                      
-                      # 翻译
-                      raw_text = newest.description
-                      clean_text = re.sub(r'<[^>]+>', '', raw_text)
-                      try:
-                          translator = GoogleTranslator(source='auto', target='zh-CN')
-                          translated_text = translator.translate(clean_text)
-                      except:
-                          translated_text = '翻译接口超时'
+                  # === 强制发送通知（调试用）===
+                  # 如果你想恢复时间限制，以后再说，先确保能收到！
+                  
+                  raw_text = newest.get('text', '无内容')
+                  link = newest.get('link', 'https://twitter.com/' + target_username)
+                  date = newest.get('date', '未知时间')
+                  
+                  # 翻译
+                  try:
+                      translator = GoogleTranslator(source='auto', target='zh-CN')
+                      translated_text = translator.translate(raw_text)
+                  except:
+                      translated_text = '翻译超时'
 
-                      title = '🚨 币安钱包新推文 (自动监控)'
-                      content = f'''
-                      <b>【线路】</b> {used_url}<br>
-                      <b>【翻译】</b><br>{translated_text}<br>
-                      <br><b>【原文】</b><br>{raw_text}<br>
-                      <br>👉 <a href=\"{newest.link}\">点击查看原文</a>
-                      '''
-                      
-                      requests.post('http://www.pushplus.plus/send', json={'token': token, 'title': title, 'content': content, 'template': 'html'})
-                      print('✅ 微信推送成功')
-                  else:
-                      print('💤 是旧消息，不打扰')
+                  title = '🚨 币安钱包推文 (ntscraper版)'
+                  content = f'''
+                  <b>【发布时间】</b> {date}<br>
+                  <b>【翻译】</b><br>{translated_text}<br>
+                  <br><b>【原文】</b><br>{raw_text}<br>
+                  <br>👉 <a href=\"{link}\">点击查看原文</a>
+                  '''
+                  
+                  requests.post('http://www.pushplus.plus/send', json={'token': token, 'title': title, 'content': content, 'template': 'html'})
+                  print('✅ 微信推送已发出！')
+                  
               else:
-                  print('⚠️ 无法读取推文时间，跳过')
-          else:
-              print('😭 所有线路都失败了。推特太难爬了！')
-              # 即使失败也发个微信告诉你，免得你以为脚本坏了 (仅调试用)
-              # requests.post('http://www.pushplus.plus/send', json={'token': token, 'title': '监控全部失败', 'content': '所有备用线路都被推特拦截了，请过段时间再试。'})
+                  print('❌ 抓取结果为空。')
+                  print('可能原因：GitHub 的 IP 暂时被所有 Nitter 节点拉黑了。')
+                  if tweets_data:
+                       print(f'调试信息: {tweets_data}')
+                  
+          except Exception as e:
+              print(f'❌ 脚本出错: {e}')
           
           print('================ 结束 ================')
           "
