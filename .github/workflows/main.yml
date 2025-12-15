@@ -22,7 +22,7 @@ jobs:
         env:
           PUSH_TOKEN: "d5f7de478314479bba5bce5b4fb1388b"
           # 这里填那个最近 40 分钟发过贴的账号 ID
-          RSS_URL: "https://nitter.privacydev.net/BinanceWallet/rss"
+          RSS_URL: "https://nitter.poast.org/BinanceWallet/rss"
         run: |
           python -c "
           import feedparser
