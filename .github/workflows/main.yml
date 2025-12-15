@@ -1,0 +1,89 @@
+name: 币安推特监控(带翻译版)
+
+on:
+  schedule:
+    # 每 20 分钟检查一次
+    - cron: '*/20 * * * *'
+  workflow_dispatch: # 允许手动测试
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 准备环境
+        uses: actions/checkout@v2
+
+      - name: 安装 Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+
+      - name: 安装依赖 (新增翻译库)
+        # 这里我们多装了一个 deep-translator 用来做免费翻译
+        run: pip install requests feedparser deep-translator
+
+      - name: 运行监控脚本
+        env:
+          # 【重要】请保留你的 Token
+          PUSH_TOKEN: "d5f7de478314479bba5bce5b4fb1388b"
+          # 【目标】如果你想换人，改下面链接最后的 ID 即可
+          # 比如想监控马斯克，就改成: .../user/elonmusk
+          RSS_URL: "https://rsshub.app/twitter/user/BinanceWallet"
+        run: |
+          python -c "
+          import feedparser
+          import requests
+          import os
+          import time
+          import re
+          from deep_translator import GoogleTranslator
+
+          token = os.environ['PUSH_TOKEN']
+          rss_url = os.environ['RSS_URL']
+          
+          print('正在连接海外节点检查推特...')
+          try:
+              feed = feedparser.parse(rss_url)
+              if feed.entries:
+                  newest = feed.entries[0]
+                  
+                  # 1. 时间判断 (只推送 40 分钟内的新闻)
+                  published_time = time.mktime(newest.published_parsed)
+                  current_time = time.time()
+                  time_diff = current_time - published_time
+                  
+                  # 为了方便你测试，你可以把下面这个 < 2400 改大一点，或者先删掉 if 限制
+                  if time_diff < 2400:
+                      print('发现新推文，正在翻译...')
+                      
+                      # 2. 清理 HTML 标签以便翻译
+                      raw_text = newest.description
+                      clean_text = re.sub(r'<[^>]+>', '', raw_text) # 去掉 <br> <img> 等
+                      
+                      # 3. 自动翻译 (如果翻译失败，自动降级只发原文)
+                      try:
+                          translator = GoogleTranslator(source='auto', target='zh-CN')
+                          translated_text = translator.translate(clean_text)
+                      except Exception as e:
+                          translated_text = f'(翻译失败: {e})'
+
+                      # 4. 组装消息
+                      title = '🚨 币安钱包有新动态！'
+                      content = f'''
+                      <b>【中文翻译】</b><br>{translated_text}<br>
+                      <br><b>【英文原文】</b><br>{raw_text}<br>
+                      <br>👉 <a href="{newest.link}">点击查看原文</a>
+                      '''
+                      
+                      # 5. 发送
+                      url = 'http://www.pushplus.plus/send'
+                      data = {'token': token, 'title': title, 'content': content, 'template': 'html'}
+                      requests.post(url, json=data)
+                      print('✅ 翻译并推送成功！')
+                  else:
+                      print(f'💤 最新推文是 {time_diff/60:.1f} 分钟前的旧消息，不打扰')
+              else:
+                  print('⚠️ 暂时没抓取到内容')
+          except Exception as e:
+              print(f'❌ 运行出错: {e}')
+          "
