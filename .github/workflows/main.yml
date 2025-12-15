@@ -1,13 +1,10 @@
-name: 币安推特监控(带翻译版)
+name: 强力调试版(无视时间限制)
 
 on:
-  schedule:
-    # 每 20 分钟检查一次
-    - cron: '*/20 * * * *'
-  workflow_dispatch: # 允许手动测试
+  workflow_dispatch: # 只能手动触发，用来查错
 
 jobs:
-  monitor:
+  debug-monitor:
     runs-on: ubuntu-latest
     steps:
       - name: 准备环境
@@ -18,15 +15,14 @@ jobs:
         with:
           python-version: '3.9'
 
-      - name: 安装依赖 (新增翻译库)
+      - name: 安装依赖
         run: pip install requests feedparser deep-translator
 
-      - name: 运行监控脚本
+      - name: 运行诊断脚本
         env:
-          # 你的 Token (已保留)
           PUSH_TOKEN: "d5f7de478314479bba5bce5b4fb1388b"
-          # 【这里已修正】改为你截图里的正确 ID: BinanceWallet
-          RSS_URL: "https://rsshub.app/twitter/user/zkPass"
+          # 这里填那个最近 40 分钟发过贴的账号 ID
+          RSS_URL: "https://rsshub.app/twitter/user/BinanceWallet"
         run: |
           python -c "
           import feedparser
@@ -35,53 +31,70 @@ jobs:
           import time
           import re
           from deep_translator import GoogleTranslator
+          from datetime import datetime
 
           token = os.environ['PUSH_TOKEN']
           rss_url = os.environ['RSS_URL']
           
-          print('正在连接海外节点检查推特...')
+          print('================ 诊断开始 ================')
+          print(f'正在尝试连接: {rss_url}')
+          
           try:
+              # 1. 尝试抓取
               feed = feedparser.parse(rss_url)
-              if feed.entries:
+              
+              # 2. 检查有没有抓到东西
+              entry_count = len(feed.entries)
+              print(f'🔍 抓取到的推文数量: {entry_count}')
+              
+              if entry_count > 0:
                   newest = feed.entries[0]
+                  print(f'📄 第一条推文标题: {newest.title}')
+                  print(f'🔗 链接: {newest.link}')
                   
-                  # 1. 时间判断 (只推送 40 分钟内的新闻)
-                  published_time = time.mktime(newest.published_parsed)
-                  current_time = time.time()
-                  time_diff = current_time - published_time
-                  
-                  # 如果你想测试旧消息，可以把下面这个 2400 改得很大，比如 999999
-                  if time_diff < 2400:
-                      print('发现新推文，正在翻译...')
-                      
-                      # 2. 清理 HTML 标签以便翻译
-                      raw_text = newest.description
-                      clean_text = re.sub(r'<[^>]+>', '', raw_text)
-                      
-                      # 3. 自动翻译
-                      try:
-                          translator = GoogleTranslator(source='auto', target='zh-CN')
-                          translated_text = translator.translate(clean_text)
-                      except Exception as e:
-                          translated_text = f'(翻译失败: {e})'
-
-                      # 4. 组装消息
-                      title = '🚨 币安钱包有新动态！'
-                      content = f'''
-                      <b>【中文翻译】</b><br>{translated_text}<br>
-                      <br><b>【英文原文】</b><br>{raw_text}<br>
-                      <br>👉 <a href=\"{newest.link}\">点击查看原文</a>
-                      '''
-                      
-                      # 5. 发送
-                      url = 'http://www.pushplus.plus/send'
-                      data = {'token': token, 'title': title, 'content': content, 'template': 'html'}
-                      requests.post(url, json=data)
-                      print('✅ 翻译并推送成功！')
+                  # 3. 检查时间（仅打印，不拦截）
+                  if hasattr(newest, 'published_parsed'):
+                      pub_time = time.mktime(newest.published_parsed)
+                      time_diff = time.time() - pub_time
+                      print(f'⏱️ 这条推文发布于: {time_diff/60:.1f} 分钟前')
                   else:
-                      print(f'💤 最新推文是 {time_diff/60:.1f} 分钟前的旧消息，不打扰')
+                      print('⚠️ 无法读取推文时间')
+
+                  # 4. 【强制发送】不管时间多久，必须发！
+                  print('🚀 正在尝试强制发送微信通知...')
+                  
+                  # 翻译逻辑
+                  raw_text = newest.description
+                  clean_text = re.sub(r'<[^>]+>', '', raw_text)
+                  try:
+                      translator = GoogleTranslator(source='auto', target='zh-CN')
+                      translated_text = translator.translate(clean_text)
+                  except Exception as e:
+                      translated_text = f'翻译失败 ({e})'
+
+                  title = '🛠️ 调试消息：收到了吗？'
+                  content = f'''
+                  <b>如果是旧消息，说明RSSHub有缓存或没更新。</b><br>
+                  <b>如果是新消息，说明之前的代码时间判断太严。</b><br>
+                  ------------------<br>
+                  <b>推文时间:</b> {time_diff/60:.1f} 分钟前<br>
+                  <b>翻译:</b> {translated_text}<br>
+                  <b>原文:</b> {raw_text}
+                  '''
+                  
+                  res = requests.post('http://www.pushplus.plus/send', json={'token': token, 'title': title, 'content': content, 'template': 'html'})
+                  print(f'✅ 推送请求已发出，服务器响应: {res.text}')
+                  
               else:
-                  print('⚠️ 暂时没抓取到内容')
+                  # ⚠️ 关键：如果数量为 0，说明 RSSHub 被推特屏蔽了
+                  print('❌ 严重问题：RSSHub 返回了空列表！')
+                  print('可能原因：推特开启了反爬虫，RSSHub 的公共节点暂时失效了。')
+                  # 打印更多调试信息
+                  if hasattr(feed, 'feed'):
+                      print(f'Feed 信息: {feed.feed}')
+                  
           except Exception as e:
-              print(f'❌ 运行出错: {e}')
+              print(f'❌ 脚本发生崩溃: {e}')
+          
+          print('================ 诊断结束 ================')
           "
